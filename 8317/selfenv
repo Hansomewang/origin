@@ -1,0 +1,55 @@
+#!/bin/sh
+export ANDROID4=`pwd`
+export ANDROID_SRC=$ANDROID4
+export KERNEL_SRC=$ANDROID4/kernel
+export KERNELDIR=$KERNEL_SRC/
+export AUTOCHIPS_DIR=$ANDROID4
+export DRIVERS_DIR=$AUTOCHIPS_DIR/protect/platform/kernel/drivers
+export PUBLIC_DRIVERS_DIR=$AUTOCHIPS_DIR/platform/kernel/drivers
+export DRIVERS_INC=$AUTOCHIPS_DIR/platform/kernel/drivers/inc
+export ARM2_SRC=$AUTOCHIPS_DIR/platform/arm2
+export DISPLAY_HARDWARE_INC=$AUTOCHIPS_DIR/hardware/atc/display
+export UBOOT_SRC=$AUTOCHIPS_DIR/platform/uboot
+export SCRIPT_DIR=$AUTOCHIPS_DIR/build
+export ANDROID_OUTPUT=$ANDROID_SRC/out
+export DRIVERS_OUTPUT=$AUTOCHIPS_DIR/platform/kernel/drivers/output
+export DRIVERS_LIB=$AUTOCHIPS_DIR/platform/kernel/drivers/lib
+export AUTOCHIPS_TOOL=$AUTOCHIPS_DIR/tools
+export RELEASE_FOLDER_NAME=$ANDROID4/image_release
+export BOARD_CFG_FILE=$AUTOCHIPS_DIR/device/atc/ac8317/BoardConfig.mk
+
+export PATH=$ANDROID_SRC/external/gstreamer_aggregate/bin/:$AUTOCHIPS_TOOL:$PATH
+export JOB_NUM=`grep processor /proc/cpuinfo |wc -l`
+export CHIP_VER=8317
+
+INPUT_PARAM=$*
+
+function check_parameter()
+{
+if [ ! -z "`echo "$INPUT_PARAM" | grep eng`" ];then
+  echo "eng"
+elif [ ! -z "`echo "$INPUT_PARAM" | grep userdebug`" ];then
+  echo "userdebug"
+elif [ ! -z "`echo "$INPUT_PARAM" | grep user`" ];then
+  echo "user"
+else
+  echo "eng"
+fi
+}
+
+retval=`check_parameter $*`
+source $ANDROID_SRC/build/envsetup.sh $retval
+
+INPUT_PARAM=${INPUT_PARAM/eng/}
+INPUT_PARAM=${INPUT_PARAM/userdebug/}
+INPUT_PARAM=${INPUT_PARAM/user/}
+INPUT_PARAM=$(echo $INPUT_PARAM)
+
+# lunch
+if [ ! -z "`echo "$INPUT_PARAM" | grep ?`" ];then
+    lunch
+else
+    lunch generic_ac8317-${retval}
+fi
+
+echo "env [$retval] setup completed!!!"

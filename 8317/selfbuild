@@ -1,0 +1,184 @@
+#!/bin/sh
+{
+#if [ -z `which androidq` ];then
+    #echo "no androidq, source bash_profile"
+    source ~/.bash_profile
+    source ~/.bashrc
+#fi
+
+if [ ! -z `which androidq` ];then
+    echo "androidq ok, build with it"
+    ANDROIDQ=androidq
+else
+    echo "no androidq, build without it"
+    ANDROIDQ=
+fi
+
+INPUT_PARA=$*
+
+# Copy Overlay folder to original
+if [ ! -z "`echo "$INPUT_PARA" | grep cpoverlay`" ];then
+    $SCRIPT_DIR/build.$INPUT_PARA
+    exit 0
+fi
+
+# process android version: user, userdebug, eng
+if [ ! -z "`echo "$INPUT_PARA" | grep eng`" ];then
+  export ANDROID_VER=eng
+elif [ ! -z "`echo "$INPUT_PARA" | grep userdebug`" ];then
+  export ANDROID_VER=userdebug
+elif [ ! -z "`echo "$INPUT_PARA" | grep user`" ];then
+  export ANDROID_VER=user
+else
+  export ANDROID_VER=eng
+fi
+INPUT_PARA=${INPUT_PARA/eng/}
+INPUT_PARA=${INPUT_PARA/userdebug/}
+INPUT_PARA=${INPUT_PARA/user/}
+INPUT_PARA=$(echo $INPUT_PARA)
+
+source build/build.env $ANDROID_VER
+
+
+echo "export env: ANDROID4=$ANDROID4"
+  if [ ! -d $AUTOCHIPS_DIR -o -z $AUTOCHIPS_DIR ];then
+  echo "export some env var error, exit"
+  exit 1
+fi
+
+ALLIMAGES="uboot kernel driver arm2 android otapackage makeimage clean cts"
+
+#check  if  para is nand
+if [ ! -z "`echo "$INPUT_PARA" | grep nand`" ];then
+    export AC83XX_BOOT_DEVICE=nand
+elif [ ! -z "`echo "$INPUT_PARA" | grep sd2`" ];then
+    export AC83XX_BOOT_DEVICE=sd2
+else
+    export AC83XX_BOOT_DEVICE=mmc
+fi
+#remove mmc para
+INPUT_PARA=${INPUT_PARA/nand/}
+INPUT_PARA=${INPUT_PARA/sd2/}
+INPUT_PARA=$(echo $INPUT_PARA)
+
+echo "AC83XX_BOOT_DEVICE :$AC83XX_BOOT_DEVICE"
+
+# check if it is release build, debug build by default
+if [ ! -z "`echo "$INPUT_PARA" | grep debug`" ];then
+	export RELEASE_BUILD=false
+	echo "build for debug"
+else
+	export RELEASE_BUILD=true
+	echo "build for release"
+fi
+#remove release or debug if it has
+INPUT_PARA=${INPUT_PARA%release}
+INPUT_PARA=${INPUT_PARA%debug}
+INPUT_PARA=$(echo $INPUT_PARA)
+
+if [ -z "$INPUT_PARA" ];then
+    IMAGE_LIST="uboot kernel driver arm2 android otapackage makeimage"
+    export BUILD_ALL=true
+    echo "no param, default:$IMAGE_LIST"
+    #echo -e "\033[31m delete out($ANDROID_OUTPUT) folder?(y/n)\033[0m"
+    #read -t 5 RMOUT
+    #if [ -d out -a "$RMOUT" = "y" -a "$?" = "0" ];then
+    #    echo -e "\033[31m begin delete out($ANDROID_OUTPUT) folder\033[0m"
+    #    $ANDROIDQ rm -rf $ANDROID_OUTPUT
+    #fi
+else
+   IMAGE_LIST="$INPUT_PARA"
+   export BUILD_ALL=false
+fi
+
+if [ ! -z "`echo $IMAGE_LIST | grep makeimage`" ];then
+   export MAKE_IMAGE=true 
+   IMAGE_LIST=${IMAGE_LIST%makeimage}
+
+fi
+
+#for test
+for PARAM in $IMAGE_LIST
+do
+  if [ ! -z "`echo "$ALLIMAGES" | grep $PARAM`" ];then
+    if [ ! -z "`echo $PARAM | grep android`" ];then
+      if [ ! -z "`echo $ANDROID_VER | grep eng`" ];then
+        BUILD_PARA="eng"
+      elif [ ! -z "`echo $ANDROID_VER | grep userdebug`" ];then
+        BUILD_PARA="userdebug"
+      elif [ ! -z "`echo $ANDROID_VER | grep user`" ];then
+        BUILD_PARA="user"
+      else
+        BUILD_PARA=""
+      fi
+    elif [ ! -z "`echo $PARAM | grep kernel`" ];then
+	  if [  ! -z "`echo "$RELEASE_BUILD" | grep false`" ]; then
+		BUILD_PARA="debug"
+	  elif [ ! -z "`echo $ANDROID_VER | grep eng`" ];then
+        	BUILD_PARA="debug"
+	  else
+  		BUILD_PARA=""
+	  fi
+    elif [ ! -z "`echo $PARAM | grep driver`" ];then
+	  if [  ! -z "`echo "$RELEASE_BUILD" | grep false`" ]; then
+		BUILD_PARA="debug"
+	  else
+  		BUILD_PARA=""
+	  fi
+    else	
+      BUILD_PARA=""
+    fi
+	
+    echo -e "\033[32m build.$PARAM $BUILD_PARA\033[0m"
+
+    if [ ! -x $SCRIPT_DIR/build.$PARAM ];then
+      if [ ! -z "`echo $PARAM | grep otapackage`" ];then
+      source build/build.env $AC83XX_BOOT_DEVICE
+      fi
+      echo -e "\033[32m $SCRIPT_DIR/build.$PARAM $BUILD_PARA can't executable!\033[0m"
+      exit 1
+    fi
+
+    echo "++ build_dir is $SCRIPT_DIR, param is $PARAM, build_para is $BUILD_PARA++"
+      $ANDROIDQ $SCRIPT_DIR/build.$PARAM $BUILD_PARA
+
+      if [ "$?" != "0" ];then
+        echo -e "\033[31m build.$PARAM $BUILD_PARA error, stop!\033[0m"
+        exit 1
+      else
+        echo -e "\033[32m build.$PARAM $BUILD_PARA OK!\033[0m"
+      fi
+  else
+	  echo -e "\033[31munknown cmd: $PARAM\033[0m"
+  fi
+done
+
+## build kernel and driver again to debug if no release
+## assume that arm2 image is only need to generate in 
+## building all iamge, which means the whole image building
+if [  ! -z "`echo "$RELEASE_BUILD" | grep false`" ]; then
+  echo "it is debug build"
+  if [  ! -z "`echo "$BUILD_ALL" | grep true`" ]; then
+    #echo "clean kernel and drivers"
+ 	#cd $KERNELDIR && make clean && make mrproper       
+	#cd $DRIVERS_DIR && make clean
+    echo "build kernel and driver again"
+    $ANDROIDQ $SCRIPT_DIR/build.kernel "debug"
+    $ANDROIDQ $SCRIPT_DIR/build.driver "debug"
+  fi
+else
+  echo "it is release build"
+fi
+
+#build image
+if [ ! -z "`echo $MAKE_IMAGE | grep true`" ];then
+  echo "Going to build images"
+  $SCRIPT_DIR/build.makeimage
+fi
+
+echo "build is done!"
+exit
+
+} | tee buildlog.txt
+
+exit ${PIPESTATUS[0]}
